@@ -1,8 +1,4 @@
 streamlit
 pandas
 requests
-beautifulsoup4
-lxml
-matplotlib
 reportlab
-openpyxl
