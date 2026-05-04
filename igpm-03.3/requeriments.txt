@@ -6,3 +6,4 @@ lxml
 matplotlib
 reportlab
 openpyxl
+reportlab
