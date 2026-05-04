@@ -86,7 +86,7 @@ def gerar_pdf(
     # 2. FUNDAMENTAÇÃO
     elementos.append(Paragraph("<b>2. FUNDAMENTAÇÃO LEGAL</b>", styles["Heading2"]))
     elementos.append(Paragraph(
-        "O presente reajuste contratual está fundamentado na Lei nº 14.133/2021, "
+        "O presente reajuste contratual está fundamentado principalmente nos artigos 25 (§7º), 92 (§3º) e 135 da Lei nº 14.133/2021, "
         "que estabelece a atualização dos valores contratuais para manutenção do equilíbrio econômico-financeiro.",
         styles["Normal"]
     ))
