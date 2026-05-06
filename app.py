@@ -14,7 +14,7 @@ st.set_page_config(page_title="Reajuste Contratual - IGP-M", layout="centered")
 st.title("📊 Reajuste Contratual pelo IGP-M")
 
 # ================================
-# BUSCAR IGP-M
+# BUSCAR IGP-M (BANCO CENTRAL)
 # ================================
 @st.cache_data
 def buscar_igpm():
@@ -25,7 +25,7 @@ def buscar_igpm():
         response.raise_for_status()
         dados = response.json()
     except Exception as e:
-        st.error(f"Erro ao acessar Banco Central: {e}")
+        st.error(f"Erro ao acessar API do Banco Central: {e}")
         return None
 
     if not dados:
@@ -51,7 +51,7 @@ if df_indices is None:
     st.stop()
 
 # ================================
-# CÁLCULO PRECISO (PADRÃO BCB)
+# CÁLCULO PADRÃO BANCO CENTRAL
 # ================================
 def calcular_reajuste_bcb(df_filtrado, valor_inicial):
     valor = Decimal(str(valor_inicial)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
@@ -66,11 +66,15 @@ def calcular_reajuste_bcb(df_filtrado, valor_inicial):
 
         historico.append({
             "data": row["data"],
-            "indice": float(row["valor"]),
+            "indice (%)": float(row["valor"]),
             "valor_corrigido": float(valor)
         })
 
+    # arredondamento final
+    valor = valor.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
     return float(valor), historico
+
 
 # ================================
 # GERAR PDF
@@ -192,16 +196,19 @@ with col2:
 if st.button("Calcular Reajuste"):
 
     if data_inicio >= data_fim:
-        st.warning("Data final deve ser maior.")
+        st.warning("A data final deve ser maior que a inicial.")
         st.stop()
 
     mes_inicio = pd.to_datetime(data_inicio).to_period("M")
     mes_fim = pd.to_datetime(data_fim).to_period("M")
 
+    # 🔥 REGRA DO BANCO CENTRAL: NÃO USA O MÊS INICIAL
     df_filtrado = df_indices[
-        (df_indices["mes"] >= mes_inicio) &
+        (df_indices["mes"] > mes_inicio) &
         (df_indices["mes"] <= mes_fim)
     ].copy()
+
+    df_filtrado = df_filtrado.sort_values("data")
 
     if df_filtrado.empty:
         st.error("Sem dados para o período.")
