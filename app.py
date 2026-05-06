@@ -38,8 +38,6 @@ def buscar_igpm():
 
     df = df.dropna()
     df = df.sort_values("data")
-
-    # 🔥 Trabalhar por mês/ano
     df["mes"] = df["data"].dt.to_period("M")
 
     return df
@@ -78,18 +76,8 @@ def calcular_reajuste_bcb(df_filtrado, valor_inicial):
 # ================================
 # GERAR PDF
 # ================================
-def gerar_pdf(
-    contrato,
-    contratante,
-    contratada,
-    objeto,
-    valor,
-    valor_corrigido,
-    df_filtrado,
-    data_inicio,
-    data_fim,
-    responsavel
-):
+def gerar_pdf(contrato, contratante, contratada, objeto, valor, valor_corrigido,
+              df_filtrado, data_inicio, data_fim, responsavel):
 
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer)
@@ -101,67 +89,23 @@ def gerar_pdf(
     elementos.append(Paragraph("<b>RELATÓRIO DE REAJUSTE CONTRATUAL</b>", styles["Title"]))
     elementos.append(Spacer(1, 12))
 
-    elementos.append(Paragraph("<b>1. IDENTIFICAÇÃO DO CONTRATO</b>", styles["Heading2"]))
+    elementos.append(Paragraph("<b>1. IDENTIFICAÇÃO</b>", styles["Heading2"]))
     elementos.append(Paragraph(f"Contrato nº: {contrato}", styles["Normal"]))
     elementos.append(Paragraph(f"Contratante: {contratante}", styles["Normal"]))
     elementos.append(Paragraph(f"Contratada: {contratada}", styles["Normal"]))
     elementos.append(Paragraph(f"Objeto: {objeto}", styles["Normal"]))
     elementos.append(Spacer(1, 12))
 
-    elementos.append(Paragraph("<b>2. FUNDAMENTAÇÃO LEGAL</b>", styles["Heading2"]))
-    elementos.append(Paragraph(
-        "Reajuste fundamentado na Lei nº 14.133/2021 para manutenção do equilíbrio econômico-financeiro.",
-        styles["Normal"]
-    ))
+    elementos.append(Paragraph("<b>2. FUNDAMENTAÇÃO</b>", styles["Heading2"]))
+    elementos.append(Paragraph("Lei nº 14.133/2021.", styles["Normal"]))
     elementos.append(Spacer(1, 12))
 
-    elementos.append(Paragraph("<b>3. ÍNDICE DE REAJUSTE</b>", styles["Heading2"]))
-    elementos.append(Paragraph("Índice utilizado: IGP-M (Banco Central)", styles["Normal"]))
-    elementos.append(Paragraph(
-        f"Período: {data_inicio.strftime('%m/%Y')} a {data_fim.strftime('%m/%Y')}",
-        styles["Normal"]
-    ))
-    elementos.append(Spacer(1, 12))
-
-    elementos.append(Paragraph("<b>4. MEMÓRIA DE CÁLCULO</b>", styles["Heading2"]))
+    elementos.append(Paragraph("<b>3. MEMÓRIA DE CÁLCULO</b>", styles["Heading2"]))
     elementos.append(Paragraph(f"Valor inicial: R$ {valor:,.2f}", styles["Normal"]))
     elementos.append(Paragraph(f"Valor corrigido: R$ {valor_corrigido:,.2f}", styles["Normal"]))
     elementos.append(Paragraph(f"Reajuste: R$ {valor_reajuste:,.2f}", styles["Normal"]))
-    elementos.append(Spacer(1, 12))
-
-    dados = [["Mês/Ano", "IGP-M (%)"]]
-
-    for _, row in df_filtrado.iterrows():
-        dados.append([
-            row["data"].strftime("%m/%Y"),
-            f"{row['valor']:.2f}"
-        ])
-
-    tabela = Table(dados)
-    tabela.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("GRID", (0, 0), (-1, -1), 1, colors.black),
-        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-    ]))
-
-    elementos.append(tabela)
-    elementos.append(Spacer(1, 20))
-
-    elementos.append(Paragraph("<b>5. CONCLUSÃO</b>", styles["Heading2"]))
-    elementos.append(Paragraph(
-        "Recomenda-se o reajuste para manter o equilíbrio econômico-financeiro.",
-        styles["Normal"]
-    ))
-    elementos.append(Spacer(1, 20))
-
-    elementos.append(Paragraph(f"Data: {datetime.now().strftime('%d/%m/%Y')}", styles["Normal"]))
-    elementos.append(Spacer(1, 20))
-
-    elementos.append(Paragraph(f"Responsável: {responsavel}", styles["Normal"]))
 
     doc.build(elementos)
-
     buffer.seek(0)
     return buffer
 
@@ -194,17 +138,16 @@ with col2:
 if st.button("Calcular Reajuste"):
 
     if data_inicio >= data_fim:
-        st.warning("A data final deve ser maior que a inicial.")
+        st.warning("Data final deve ser maior.")
         st.stop()
 
-    # 🔥 IGNORA O DIA
+    # 🔥 Trabalhar só mês/ano
     data_inicio_mes = pd.to_datetime(data_inicio).replace(day=1)
     data_fim_mes = pd.to_datetime(data_fim).replace(day=1)
 
     mes_inicio = pd.Period(data_inicio_mes, freq="M")
     mes_fim = pd.Period(data_fim_mes, freq="M")
 
-    # 🔥 REGRA BCB: NÃO USA MÊS INICIAL
     df_filtrado = df_indices[
         (df_indices["mes"] > mes_inicio) &
         (df_indices["mes"] <= mes_fim)
@@ -221,22 +164,44 @@ if st.button("Calcular Reajuste"):
     st.success("Reajuste calculado com sucesso!")
     st.metric("Valor corrigido", f"R$ {valor_corrigido:,.2f}")
 
+    # Tabela evolução
     df_calc = pd.DataFrame(historico)
-
-    st.subheader("📊 Evolução do Reajuste (Mês/Ano)")
+    st.subheader("📊 Evolução do Reajuste")
     st.dataframe(df_calc)
 
+    # =============================
+    # 🔍 COMPARAÇÃO COM BCB
+    # =============================
+    st.subheader("🔍 Comparação com Banco Central")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.metric("Seu Sistema", f"R$ {valor_corrigido:,.2f}")
+
+    with col2:
+        valor_bcb = st.number_input("Valor do Banco Central", min_value=0.0, format="%.2f")
+
+    if valor_bcb > 0:
+        diferenca = round(valor_corrigido - valor_bcb, 2)
+
+        if abs(diferenca) < 0.01:
+            st.success("✅ Valores idênticos ao Banco Central")
+        else:
+            st.warning(f"⚠️ Diferença: R$ {diferenca:,.2f}")
+
+        df_comp = pd.DataFrame({
+            "Fonte": ["Seu Sistema", "Banco Central"],
+            "Valor (R$)": [valor_corrigido, valor_bcb]
+        })
+
+        st.table(df_comp)
+
+    # PDF
     pdf = gerar_pdf(
-        contrato,
-        contratante,
-        contratada,
-        objeto,
-        valor,
-        valor_corrigido,
-        df_filtrado,
-        data_inicio_mes,
-        data_fim_mes,
-        responsavel
+        contrato, contratante, contratada, objeto,
+        valor, valor_corrigido,
+        df_filtrado, data_inicio_mes, data_fim_mes, responsavel
     )
 
     st.download_button(
