@@ -3,6 +3,7 @@ import pandas as pd
 import requests
 from datetime import datetime
 from io import BytesIO
+from decimal import Decimal, ROUND_HALF_UP
 
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib import colors
@@ -13,7 +14,7 @@ st.set_page_config(page_title="Reajuste Contratual - IGP-M", layout="centered")
 st.title("📊 Reajuste Contratual pelo IGP-M")
 
 # ================================
-# BUSCAR IGP-M (BANCO CENTRAL)
+# BUSCAR IGP-M
 # ================================
 @st.cache_data
 def buscar_igpm():
@@ -50,16 +51,26 @@ if df_indices is None:
     st.stop()
 
 # ================================
-# FUNÇÃO DE CÁLCULO (ESTILO BCB)
+# CÁLCULO PRECISO (PADRÃO BCB)
 # ================================
-def calcular_reajuste(df_filtrado, valor_inicial):
-    fator = 1.0
+def calcular_reajuste_bcb(df_filtrado, valor_inicial):
+    valor = Decimal(str(valor_inicial)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    historico = []
 
     for _, row in df_filtrado.iterrows():
-        fator *= (1 + row["valor"] / 100)
+        indice = Decimal(str(row["valor"])) / Decimal("100")
+        fator = Decimal("1") + indice
 
-    valor_final = valor_inicial * fator
-    return valor_final, fator
+        valor = (valor * fator).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+        historico.append({
+            "data": row["data"],
+            "indice": float(row["valor"]),
+            "valor_corrigido": float(valor)
+        })
+
+    return float(valor), historico
 
 # ================================
 # GERAR PDF
@@ -71,7 +82,6 @@ def gerar_pdf(
     objeto,
     valor,
     valor_corrigido,
-    fator,
     df_filtrado,
     data_inicio,
     data_fim,
@@ -142,10 +152,7 @@ def gerar_pdf(
     ))
     elementos.append(Spacer(1, 20))
 
-    elementos.append(Paragraph(
-        f"Data: {datetime.now().strftime('%d/%m/%Y')}",
-        styles["Normal"]
-    ))
+    elementos.append(Paragraph(f"Data: {datetime.now().strftime('%d/%m/%Y')}", styles["Normal"]))
     elementos.append(Spacer(1, 20))
 
     elementos.append(Paragraph(f"Responsável: {responsavel}", styles["Normal"]))
@@ -200,19 +207,16 @@ if st.button("Calcular Reajuste"):
         st.error("Sem dados para o período.")
         st.stop()
 
-    valor_corrigido, fator = calcular_reajuste(df_filtrado, valor)
+    valor_corrigido, historico = calcular_reajuste_bcb(df_filtrado, valor)
 
     st.success("Reajuste calculado com sucesso!")
     st.metric("Valor corrigido", f"R$ {valor_corrigido:,.2f}")
 
-    # TABELA ESTILO CALCULADORA DO CIDADÃO
-    df_calc = df_filtrado.copy()
-    df_calc["fator_mes"] = 1 + (df_calc["valor"] / 100)
-    df_calc["acumulado"] = df_calc["fator_mes"].cumprod()
-    df_calc["valor_corrigido"] = valor * df_calc["acumulado"]
+    # TABELA IGUAL AO BANCO CENTRAL
+    df_calc = pd.DataFrame(historico)
 
-    st.subheader("📊 Evolução do Reajuste")
-    st.dataframe(df_calc[["data", "valor", "valor_corrigido"]])
+    st.subheader("📊 Evolução do Reajuste (Padrão Banco Central)")
+    st.dataframe(df_calc)
 
     # PDF
     pdf = gerar_pdf(
@@ -222,7 +226,6 @@ if st.button("Calcular Reajuste"):
         objeto,
         valor,
         valor_corrigido,
-        fator,
         df_filtrado,
         data_inicio,
         data_fim,
