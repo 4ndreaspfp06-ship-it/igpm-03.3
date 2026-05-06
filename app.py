@@ -14,7 +14,7 @@ st.set_page_config(page_title="Reajuste Contratual - IGP-M", layout="centered")
 st.title("📊 Reajuste Contratual pelo IGP-M")
 
 # ================================
-# BUSCAR IGP-M (BANCO CENTRAL)
+# BUSCAR IGP-M
 # ================================
 @st.cache_data
 def buscar_igpm():
@@ -25,7 +25,7 @@ def buscar_igpm():
         response.raise_for_status()
         dados = response.json()
     except Exception as e:
-        st.error(f"Erro ao acessar API do Banco Central: {e}")
+        st.error(f"Erro ao acessar Banco Central: {e}")
         return None
 
     if not dados:
@@ -39,6 +39,7 @@ def buscar_igpm():
     df = df.dropna()
     df = df.sort_values("data")
 
+    # 🔥 Trabalhar por mês/ano
     df["mes"] = df["data"].dt.to_period("M")
 
     return df
@@ -51,7 +52,7 @@ if df_indices is None:
     st.stop()
 
 # ================================
-# CÁLCULO PADRÃO BANCO CENTRAL
+# CÁLCULO PADRÃO BCB
 # ================================
 def calcular_reajuste_bcb(df_filtrado, valor_inicial):
     valor = Decimal(str(valor_inicial)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
@@ -65,16 +66,14 @@ def calcular_reajuste_bcb(df_filtrado, valor_inicial):
         valor = (valor * fator).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
         historico.append({
-            "data": row["data"],
+            "mes_ano": row["data"].strftime("%m/%Y"),
             "indice (%)": float(row["valor"]),
             "valor_corrigido": float(valor)
         })
 
-    # arredondamento final
     valor = valor.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
     return float(valor), historico
-
 
 # ================================
 # GERAR PDF
@@ -166,7 +165,6 @@ def gerar_pdf(
     buffer.seek(0)
     return buffer
 
-
 # ================================
 # FORMULÁRIO
 # ================================
@@ -199,16 +197,20 @@ if st.button("Calcular Reajuste"):
         st.warning("A data final deve ser maior que a inicial.")
         st.stop()
 
-    mes_inicio = pd.to_datetime(data_inicio).to_period("M")
-    mes_fim = pd.to_datetime(data_fim).to_period("M")
+    # 🔥 IGNORA O DIA
+    data_inicio_mes = pd.to_datetime(data_inicio).replace(day=1)
+    data_fim_mes = pd.to_datetime(data_fim).replace(day=1)
 
-    # 🔥 REGRA DO BANCO CENTRAL: NÃO USA O MÊS INICIAL
+    mes_inicio = pd.Period(data_inicio_mes, freq="M")
+    mes_fim = pd.Period(data_fim_mes, freq="M")
+
+    # 🔥 REGRA BCB: NÃO USA MÊS INICIAL
     df_filtrado = df_indices[
         (df_indices["mes"] > mes_inicio) &
         (df_indices["mes"] <= mes_fim)
     ].copy()
 
-    df_filtrado = df_filtrado.sort_values("data")
+    df_filtrado = df_filtrado.sort_values("mes")
 
     if df_filtrado.empty:
         st.error("Sem dados para o período.")
@@ -219,13 +221,11 @@ if st.button("Calcular Reajuste"):
     st.success("Reajuste calculado com sucesso!")
     st.metric("Valor corrigido", f"R$ {valor_corrigido:,.2f}")
 
-    # TABELA IGUAL AO BANCO CENTRAL
     df_calc = pd.DataFrame(historico)
 
-    st.subheader("📊 Evolução do Reajuste (Padrão Banco Central)")
+    st.subheader("📊 Evolução do Reajuste (Mês/Ano)")
     st.dataframe(df_calc)
 
-    # PDF
     pdf = gerar_pdf(
         contrato,
         contratante,
@@ -234,8 +234,8 @@ if st.button("Calcular Reajuste"):
         valor,
         valor_corrigido,
         df_filtrado,
-        data_inicio,
-        data_fim,
+        data_inicio_mes,
+        data_fim_mes,
         responsavel
     )
 
