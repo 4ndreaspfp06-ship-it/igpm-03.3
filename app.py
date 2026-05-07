@@ -15,6 +15,10 @@ from reportlab.platypus import (
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
 
+# ======================================================
+# CONFIGURAÇÃO
+# ======================================================
+
 st.set_page_config(
     page_title="Reajuste Contratual - IGP-M",
     layout="centered"
@@ -25,6 +29,7 @@ st.title("📊 Reajuste Contratual pelo IGP-M")
 # ======================================================
 # BUSCAR IGP-M
 # ======================================================
+
 @st.cache_data
 def buscar_igpm():
 
@@ -46,6 +51,9 @@ def buscar_igpm():
         .astype(float)
     )
 
+    # ARREDONDAR PARA 2 CASAS
+    df["valor"] = df["valor"].round(2)
+
     df["mes"] = df["data"].dt.strftime("%m/%Y")
 
     return df
@@ -56,6 +64,7 @@ df_indices = buscar_igpm()
 # ======================================================
 # PDF
 # ======================================================
+
 def gerar_pdf(
     contrato,
     contratante,
@@ -78,9 +87,12 @@ def gerar_pdf(
 
     elementos = []
 
-    reajuste = valor_corrigido - valor
+    reajuste = round(valor_corrigido - valor, 2)
 
+    # ==================================================
     # TÍTULO
+    # ==================================================
+
     elementos.append(
         Paragraph(
             "<b>RELATÓRIO DE REAJUSTE CONTRATUAL</b>",
@@ -90,7 +102,10 @@ def gerar_pdf(
 
     elementos.append(Spacer(1, 20))
 
+    # ==================================================
     # IDENTIFICAÇÃO
+    # ==================================================
+
     elementos.append(
         Paragraph(
             "<b>1. IDENTIFICAÇÃO DO CONTRATO</b>",
@@ -116,7 +131,10 @@ def gerar_pdf(
 
     elementos.append(Spacer(1, 15))
 
+    # ==================================================
     # FUNDAMENTAÇÃO
+    # ==================================================
+
     elementos.append(
         Paragraph(
             "<b>2. FUNDAMENTAÇÃO LEGAL</b>",
@@ -136,7 +154,10 @@ def gerar_pdf(
 
     elementos.append(Spacer(1, 15))
 
-    # CÁLCULO
+    # ==================================================
+    # MEMÓRIA DE CÁLCULO
+    # ==================================================
+
     elementos.append(
         Paragraph(
             "<b>3. MEMÓRIA DE CÁLCULO</b>",
@@ -146,7 +167,7 @@ def gerar_pdf(
 
     elementos.append(
         Paragraph(
-            f"Período: {mes_inicio} até {mes_fim}",
+            f"Período considerado: {mes_inicio} até {mes_fim}",
             styles["Normal"]
         )
     )
@@ -160,7 +181,7 @@ def gerar_pdf(
 
     elementos.append(
         Paragraph(
-            f"Percentual acumulado: {percentual:.4f}%",
+            f"Percentual acumulado: {percentual:.2f}%",
             styles["Normal"]
         )
     )
@@ -181,7 +202,10 @@ def gerar_pdf(
 
     elementos.append(Spacer(1, 15))
 
+    # ==================================================
     # TABELA
+    # ==================================================
+
     dados = [["Mês/Ano", "IGP-M (%)"]]
 
     for _, row in df_filtrado.iterrows():
@@ -204,7 +228,33 @@ def gerar_pdf(
 
     elementos.append(Spacer(1, 20))
 
+    # ==================================================
+    # CONCLUSÃO
+    # ==================================================
+
+    elementos.append(
+        Paragraph(
+            "<b>4. CONCLUSÃO</b>",
+            styles["Heading2"]
+        )
+    )
+
+    elementos.append(
+        Paragraph(
+            "Após aplicação do índice acumulado do IGP-M "
+            "no período informado, verifica-se a necessidade "
+            "de atualização do valor contratual para manutenção "
+            "do equilíbrio econômico-financeiro.",
+            styles["Normal"]
+        )
+    )
+
+    elementos.append(Spacer(1, 25))
+
+    # ==================================================
     # ASSINATURA
+    # ==================================================
+
     elementos.append(
         Paragraph(
             f"Responsável pelo cálculo: {responsavel}",
@@ -231,6 +281,7 @@ def gerar_pdf(
 # ======================================================
 # FORMULÁRIO
 # ======================================================
+
 st.subheader("📄 Dados do Contrato")
 
 contrato = st.text_input("Contrato nº")
@@ -243,17 +294,23 @@ objeto = st.text_area("Objeto")
 
 responsavel = st.text_input("Responsável pelo cálculo")
 
+# ======================================================
+# DADOS FINANCEIROS
+# ======================================================
+
 st.subheader("💰 Dados Financeiros")
 
 valor = st.number_input(
     "Valor inicial (R$)",
     min_value=0.0,
-    value=1000.0
+    value=1000.00,
+    step=100.00
 )
 
 # ======================================================
-# MÊS/ANO
+# MÊS / ANO
 # ======================================================
+
 meses = df_indices["mes"].tolist()
 
 col1, col2 = st.columns(2)
@@ -275,22 +332,33 @@ with col2:
     )
 
 # ======================================================
-# CALCULAR
+# CÁLCULO
 # ======================================================
-if st.button("Calcular Reajuste"):
 
-    data_inicio = datetime.strptime(mes_inicio, "%m/%Y")
-    data_fim = datetime.strptime(mes_fim, "%m/%Y")
+if st.button("📊 Calcular Reajuste"):
+
+    data_inicio = datetime.strptime(
+        mes_inicio,
+        "%m/%Y"
+    )
+
+    data_fim = datetime.strptime(
+        mes_fim,
+        "%m/%Y"
+    )
 
     if data_inicio >= data_fim:
 
         st.warning(
-            "O período final deve ser maior."
+            "O período final deve ser maior que o inicial."
         )
 
         st.stop()
 
-    # FILTRO CORRETO
+    # ==================================================
+    # FILTRAR PERÍODO
+    # ==================================================
+
     df_filtrado = df_indices[
         (df_indices["data"] >= data_inicio) &
         (df_indices["data"] <= data_fim)
@@ -298,26 +366,37 @@ if st.button("Calcular Reajuste"):
 
     if df_filtrado.empty:
 
-        st.error("Não existem índices no período.")
+        st.error(
+            "Não existem índices disponíveis para o período."
+        )
 
         st.stop()
 
-    # CÁLCULO ACUMULADO CORRETO
+    # ==================================================
+    # CÁLCULO ACUMULADO
+    # ==================================================
+
     fator = 1
 
     for indice in df_filtrado["valor"]:
 
+        indice = round(indice, 2)
+
         fator *= (1 + indice / 100)
 
-    percentual = (fator - 1) * 100
+    percentual = round((fator - 1) * 100, 2)
 
-    valor_corrigido = valor * fator
+    valor_corrigido = round(valor * fator, 2)
+
+    # ==================================================
+    # RESULTADOS
+    # ==================================================
 
     st.success("Reajuste calculado com sucesso.")
 
     st.metric(
         "Percentual acumulado",
-        f"{percentual:.4f}%"
+        f"{percentual:.2f}%"
     )
 
     st.metric(
@@ -325,7 +404,10 @@ if st.button("Calcular Reajuste"):
         f"R$ {valor_corrigido:,.2f}"
     )
 
+    # ==================================================
     # TABELA
+    # ==================================================
+
     st.subheader("📑 Índices Utilizados")
 
     st.dataframe(
@@ -337,7 +419,10 @@ if st.button("Calcular Reajuste"):
         use_container_width=True
     )
 
+    # ==================================================
     # PDF
+    # ==================================================
+
     pdf = gerar_pdf(
         contrato,
         contratante,
@@ -353,7 +438,7 @@ if st.button("Calcular Reajuste"):
     )
 
     st.download_button(
-        "📄 Baixar Relatório PDF",
+        "📄 Baixar Relatório em PDF",
         data=pdf,
         file_name=f"reajuste_igpm_{datetime.now().strftime('%Y%m%d')}.pdf",
         mime="application/pdf"
