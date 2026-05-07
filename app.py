@@ -27,7 +27,7 @@ st.set_page_config(
 st.title("📊 Reajuste Contratual pelo IGP-M")
 
 # ======================================================
-# BUSCAR IGP-M
+# BUSCAR IGP-M DO BANCO CENTRAL
 # ======================================================
 
 @st.cache_data
@@ -49,10 +49,10 @@ def buscar_igpm():
         df["valor"]
         .str.replace(",", ".", regex=False)
         .astype(float)
+        .round(2)
     )
 
-    # ARREDONDAR PARA 2 CASAS
-    df["valor"] = df["valor"].round(2)
+    df = df.sort_values("data")
 
     df["mes"] = df["data"].dt.strftime("%m/%Y")
 
@@ -62,7 +62,7 @@ def buscar_igpm():
 df_indices = buscar_igpm()
 
 # ======================================================
-# PDF
+# GERAR PDF
 # ======================================================
 
 def gerar_pdf(
@@ -74,8 +74,6 @@ def gerar_pdf(
     valor_corrigido,
     percentual,
     df_filtrado,
-    mes_inicio,
-    mes_fim,
     responsavel
 ):
 
@@ -167,7 +165,17 @@ def gerar_pdf(
 
     elementos.append(
         Paragraph(
-            f"Período considerado: {mes_inicio} até {mes_fim}",
+            f"Período considerado: "
+            f"{df_filtrado.iloc[0]['mes']} até "
+            f"{df_filtrado.iloc[-1]['mes']}",
+            styles["Normal"]
+        )
+    )
+
+    elementos.append(
+        Paragraph(
+            "Cálculo realizado considerando os "
+            "últimos 12 meses acumulados do IGP-M.",
             styles["Normal"]
         )
     )
@@ -241,10 +249,10 @@ def gerar_pdf(
 
     elementos.append(
         Paragraph(
-            "Após aplicação do índice acumulado do IGP-M "
-            "no período informado, verifica-se a necessidade "
-            "de atualização do valor contratual para manutenção "
-            "do equilíbrio econômico-financeiro.",
+            "Após aplicação do índice acumulado "
+            "dos últimos 12 meses do IGP-M, "
+            "verifica-se a necessidade de atualização "
+            "do valor contratual.",
             styles["Normal"]
         )
     )
@@ -308,28 +316,16 @@ valor = st.number_input(
 )
 
 # ======================================================
-# MÊS / ANO
+# SELEÇÃO MÊS/ANO
 # ======================================================
 
 meses = df_indices["mes"].tolist()
 
-col1, col2 = st.columns(2)
-
-with col1:
-
-    mes_inicio = st.selectbox(
-        "Mês/Ano Inicial",
-        meses,
-        index=max(len(meses)-13, 0)
-    )
-
-with col2:
-
-    mes_fim = st.selectbox(
-        "Mês/Ano Final",
-        meses,
-        index=len(meses)-1
-    )
+mes_referencia = st.selectbox(
+    "Mês/Ano de referência do reajuste",
+    meses,
+    index=len(meses)-1
+)
 
 # ======================================================
 # CÁLCULO
@@ -337,37 +333,23 @@ with col2:
 
 if st.button("📊 Calcular Reajuste"):
 
-    data_inicio = datetime.strptime(
-        mes_inicio,
+    data_referencia = datetime.strptime(
+        mes_referencia,
         "%m/%Y"
     )
-
-    data_fim = datetime.strptime(
-        mes_fim,
-        "%m/%Y"
-    )
-
-    if data_inicio >= data_fim:
-
-        st.warning(
-            "O período final deve ser maior que o inicial."
-        )
-
-        st.stop()
 
     # ==================================================
-    # FILTRAR PERÍODO
+    # PEGAR ÚLTIMOS 12 MESES
     # ==================================================
 
     df_filtrado = df_indices[
-        (df_indices["data"] >= data_inicio) &
-        (df_indices["data"] <= data_fim)
-    ].copy()
+        df_indices["data"] <= data_referencia
+    ].tail(12).copy()
 
-    if df_filtrado.empty:
+    if len(df_filtrado) < 12:
 
         st.error(
-            "Não existem índices disponíveis para o período."
+            "Não existem 12 meses completos disponíveis."
         )
 
         st.stop()
@@ -384,9 +366,20 @@ if st.button("📊 Calcular Reajuste"):
 
         fator *= (1 + indice / 100)
 
-    percentual = round((fator - 1) * 100, 2)
+    percentual = round(
+        (fator - 1) * 100,
+        2
+    )
 
-    valor_corrigido = round(valor * fator, 2)
+    valor_corrigido = round(
+        valor * fator,
+        2
+    )
+
+    reajuste = round(
+        valor_corrigido - valor,
+        2
+    )
 
     # ==================================================
     # RESULTADOS
@@ -395,7 +388,13 @@ if st.button("📊 Calcular Reajuste"):
     st.success("Reajuste calculado com sucesso.")
 
     st.metric(
-        "Percentual acumulado",
+        "Período utilizado",
+        f"{df_filtrado.iloc[0]['mes']} até "
+        f"{df_filtrado.iloc[-1]['mes']}"
+    )
+
+    st.metric(
+        "IGP-M acumulado (12 meses)",
         f"{percentual:.2f}%"
     )
 
@@ -404,18 +403,27 @@ if st.button("📊 Calcular Reajuste"):
         f"R$ {valor_corrigido:,.2f}"
     )
 
+    st.metric(
+        "Valor do reajuste",
+        f"R$ {reajuste:,.2f}"
+    )
+
     # ==================================================
     # TABELA
     # ==================================================
 
     st.subheader("📑 Índices Utilizados")
 
-    st.dataframe(
+    tabela = (
         df_filtrado[["mes", "valor"]]
         .rename(columns={
             "mes": "Mês/Ano",
             "valor": "IGP-M (%)"
-        }),
+        })
+    )
+
+    st.dataframe(
+        tabela,
         use_container_width=True
     )
 
@@ -432,14 +440,15 @@ if st.button("📊 Calcular Reajuste"):
         valor_corrigido,
         percentual,
         df_filtrado,
-        mes_inicio,
-        mes_fim,
         responsavel
     )
 
     st.download_button(
         "📄 Baixar Relatório em PDF",
         data=pdf,
-        file_name=f"reajuste_igpm_{datetime.now().strftime('%Y%m%d')}.pdf",
+        file_name=(
+            f"reajuste_igpm_"
+            f"{datetime.now().strftime('%Y%m%d')}.pdf"
+        ),
         mime="application/pdf"
     )
